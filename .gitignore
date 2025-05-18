@@ -39,7 +39,7 @@ data/
 /__pycache__/
 team_chat/
 .venv
-discord_export.py
+
 
 # Temporary files
 *.tmp
