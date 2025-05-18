@@ -229,7 +229,7 @@ class NarrativeAgent extends BaseAgent {
     
     // Summarize progress events
     if (progressEvents.length > 0) {
-      text += `Progress Updates:\n`;
+      text += 'Progress Updates:\n';
       
       // Group by project
       const projectProgress = new Map();
@@ -246,7 +246,7 @@ class NarrativeAgent extends BaseAgent {
     
     // Summarize dependency events
     if (dependencyEvents.length > 0) {
-      text += `Dependency Updates:\n`;
+      text += 'Dependency Updates:\n';
       
       for (const event of dependencyEvents) {
         const { sourceProjectId, targetProjectId } = event.subject;
@@ -260,7 +260,7 @@ class NarrativeAgent extends BaseAgent {
     
     // Include insights
     if (insightEvents.length > 0) {
-      text += `Insights:\n`;
+      text += 'Insights:\n';
       
       for (const event of insightEvents) {
         const { projectId } = event.subject;
@@ -288,7 +288,7 @@ class NarrativeAgent extends BaseAgent {
     text += `${message}\n\n`;
     
     if (contextEvents.length > 0) {
-      text += `Context:\n`;
+      text += 'Context:\n';
       
       // Group context events by type
       const progressEvents = contextEvents.filter(e => e.kind === 'ProjectProgressCalculated');

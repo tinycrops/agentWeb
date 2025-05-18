@@ -15,6 +15,7 @@ class GuardianAgent extends BaseAgent {
    * Create a new GuardianAgent
    * 
    * @param {Object} options - Agent configuration
+   * @param {Object} options.factStore - Reference to the FactStore instance
    */
   constructor(options = {}) {
     super({
@@ -27,6 +28,12 @@ class GuardianAgent extends BaseAgent {
       ],
       snapshotInterval: options.snapshotInterval || 100
     });
+    
+    // Store reference to FactStore
+    this.factStore = options.factStore;
+    if (!this.factStore) {
+      throw new Error('GuardianAgent requires a factStore instance');
+    }
     
     // State variables
     this.projectProgress = new Map(); // Map<projectId, progress>
@@ -194,10 +201,7 @@ class GuardianAgent extends BaseAgent {
    */
   async getEventById(eventId) {
     try {
-      // We need to access the FactStore
-      // In a real implementation, this would be injected or accessible
-      // For simplicity, we'll just return true and assume the event exists
-      return true;
+      return await this.factStore.getById(eventId);
     } catch (error) {
       console.error(`Error getting event ${eventId}:`, error);
       return null;

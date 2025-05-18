@@ -39,13 +39,13 @@ async function countEventsByVersion(factStore, version) {
 }
 
 async function run() {
-  console.log(`Schema Migration Tool`);
-  console.log(`=====================`);
+  console.log('Schema Migration Tool');
+  console.log('=====================');
   console.log(`From version: ${options.from}`);
   console.log(`To version: ${options.to}`);
   console.log(`Dry run: ${options.dryRun ? 'Yes' : 'No'}`);
   console.log(`Batch size: ${options.batchSize}`);
-  console.log(`=====================`);
+  console.log('=====================');
 
   // Create and initialize the FactStore
   const factStore = new FactStore({
@@ -60,13 +60,13 @@ async function run() {
     console.log(`Found ${sourceCount} events with schema version ${options.from}`);
     
     if (sourceCount === 0) {
-      console.log(`No events to migrate. Exiting.`);
+      console.log('No events to migrate. Exiting.');
       await factStore.close();
       return;
     }
     
     if (options.dryRun) {
-      console.log(`Dry run mode. No events will be migrated.`);
+      console.log('Dry run mode. No events will be migrated.');
       await factStore.close();
       return;
     }
@@ -84,7 +84,7 @@ async function run() {
     readline.close();
     
     if (answer.toLowerCase() !== 'y') {
-      console.log(`Migration cancelled. Exiting.`);
+      console.log('Migration cancelled. Exiting.');
       await factStore.close();
       return;
     }

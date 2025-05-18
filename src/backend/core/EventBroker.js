@@ -199,8 +199,14 @@ class EventBroker {
               // Execute the callback
               await callback(event);
               
-              // Acknowledge the message
-              await subscriber.xAck(stream, groupName, id);
+              try {
+                // Acknowledge the message only after successful callback execution
+                await subscriber.xAck(stream, groupName, id);
+              } catch (ackError) {
+                console.error(`Error acknowledging message ${id}:`, ackError);
+                // We don't rethrow to allow the consumer to continue
+                // This message will be redelivered on restart as it wasn't acknowledged
+              }
             } catch (err) {
               console.error(`Error processing message ${id}:`, err);
               // We don't acknowledge to allow retry

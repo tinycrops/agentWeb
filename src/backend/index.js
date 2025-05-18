@@ -36,6 +36,7 @@ const ProgressAgent = require('./agents/ProgressAgent');
 const RelationAgent = require('./agents/RelationAgent');
 const InsightAgent = require('./agents/InsightAgent');
 const NarrativeAgent = require('./agents/NarrativeAgent');
+const GuardianAgent = require('./agents/GuardianAgent');
 
 // Create Express application
 const app = express();
@@ -71,6 +72,10 @@ const narrativeAgent = new NarrativeAgent({
   // Use a shorter interval for testing purposes
   narrativeInterval: 5 * 60 * 1000 // 5 minutes
 });
+const guardianAgent = new GuardianAgent({ 
+  broker: eventBroker,
+  factStore: factStore 
+});
 
 // Initialize and start everything
 async function initialize() {
@@ -96,6 +101,9 @@ async function initialize() {
     
     await narrativeAgent.initialize();
     await narrativeAgent.start();
+    
+    await guardianAgent.initialize();
+    await guardianAgent.start();
     
     console.log('AgentWeb backend initialized successfully');
   } catch (error) {
@@ -284,6 +292,7 @@ process.on('SIGTERM', async () => {
   await insightAgent.stop();
   await relationAgent.stop();
   await progressAgent.stop();
+  await guardianAgent.stop();
   
   // Close view materializer
   await viewMaterializer.close();
@@ -314,5 +323,6 @@ module.exports = {
   progressAgent,
   relationAgent,
   insightAgent,
-  narrativeAgent
+  narrativeAgent,
+  guardianAgent
 }; 
