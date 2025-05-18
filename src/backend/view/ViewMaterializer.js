@@ -7,6 +7,7 @@
 const { MongoClient } = require('mongodb');
 const EventBroker = require('../core/EventBroker');
 const EventEmitter = require('events');
+const config = require('../util/config');
 
 class ViewMaterializer extends EventEmitter {
   /**
@@ -19,8 +20,8 @@ class ViewMaterializer extends EventEmitter {
    */
   constructor(options = {}) {
     super();
-    this.mongoUrl = options.mongoUrl || process.env.MONGODB_URL || 'mongodb://localhost:27017';
-    this.dbName = options.dbName || process.env.MONGODB_DB || 'agentWeb';
+    this.mongoUrl = options.mongoUrl || config.get('storage.factStore.mongo.url', 'mongodb://localhost:27017');
+    this.dbName = options.dbName || config.get('storage.factStore.mongo.database', 'agentWeb');
     this.broker = options.broker;
     this.client = null;
     this.db = null;
@@ -333,18 +334,33 @@ class ViewMaterializer extends EventEmitter {
    * Get the latest narratives
    * 
    * @param {number} limit - Maximum number of narratives to return
-   * @returns {Array} Array of narratives
+   * @param {string} kind - Optional kind of narrative to filter by
+   * @returns {Array} Latest narratives
    */
-  async getLatestNarratives(limit = 10) {
+  async getLatestNarratives(limit = 10, kind = null) {
     if (!this.isInitialized) {
       await this.initialize();
     }
     
-    return this.views.narratives
-      .find()
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .toArray();
+    try {
+      let query = {};
+      
+      // Filter by kind if provided
+      if (kind) {
+        query.kind = kind;
+      }
+      
+      const narratives = await this.views.narratives
+        .find(query)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .toArray();
+      
+      return narratives;
+    } catch (error) {
+      console.error('Error getting latest narratives:', error);
+      throw error;
+    }
   }
 
   /**

@@ -44,3 +44,6 @@ discord_export.py
 # Temporary files
 *.tmp
 *.bak
+
+# Process IDs
+.pid

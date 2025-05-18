@@ -7,6 +7,7 @@
 const Redis = require('redis');
 const Event = require('./Event');
 const FactStore = require('./FactStore');
+const config = require('../util/config');
 
 class EventBroker {
   /**
@@ -17,7 +18,8 @@ class EventBroker {
    * @param {FactStore} options.factStore - Reference to the FactStore
    */
   constructor(options = {}) {
-    this.redisUrl = options.redisUrl || process.env.REDIS_URL || 'redis://localhost:6379';
+    this.redisUrl = options.redisUrl || config.get('messaging.broker.redis.url', 'redis://localhost:6379');
+    this.keyPrefix = config.get('messaging.broker.redis.keyPrefix', 'agent-web:');
     this.factStore = options.factStore || new FactStore();
     this.publisher = null;
     this.subscribers = new Map();
@@ -56,7 +58,7 @@ class EventBroker {
    * @returns {string} Stream name
    */
   getStreamName(kind) {
-    return `events:${kind}`;
+    return `${this.keyPrefix}events:${kind}`;
   }
 
   /**

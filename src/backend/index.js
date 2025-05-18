@@ -11,11 +11,17 @@ const morgan = require('morgan');
 const fs = require('fs');
 const path = require('path');
 
+// Import configuration manager
+const config = require('./util/config');
+
 // Core components
 let FactStore, EventBroker, ViewMaterializer;
 
+// Ensure config is loaded
+config.load();
+
 // Check if we should use mock implementations
-const useMocks = process.env.USE_MOCKS === 'true' || !checkDependencies();
+const useMocks = config.get('system.useMocks', false) || !checkDependencies();
 
 if (useMocks) {
   console.log('Using mock implementations for FactStore, EventBroker, and ViewMaterializer');
@@ -37,45 +43,51 @@ const RelationAgent = require('./agents/RelationAgent');
 const InsightAgent = require('./agents/InsightAgent');
 const NarrativeAgent = require('./agents/NarrativeAgent');
 const GuardianAgent = require('./agents/GuardianAgent');
+const ForecastAgent = require('./agents/ForecastAgent');
 
 // Create Express application
 const app = express();
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST']
+    origin: config.get('api.cors.origin', 'http://localhost:3000'),
+    methods: config.get('api.cors.methods', ['GET', 'POST'])
   }
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: config.get('api.cors.origin', 'http://localhost:3000'),
+  methods: config.get('api.cors.methods', ['GET', 'POST'])
+}));
 app.use(express.json());
 app.use(morgan('dev'));
 
 // Core components
-const factStore = new FactStore();
-const eventBroker = new EventBroker({ factStore });
+const factStore = new FactStore({
+  mongoUrl: config.get('storage.factStore.mongo.url'),
+  dbName: config.get('storage.factStore.mongo.database'),
+  collectionName: config.get('storage.factStore.mongo.collection'),
+  schemaVersion: config.get('storage.factStore.schemaVersion')
+});
+
+const eventBroker = new EventBroker({
+  redisUrl: config.get('messaging.broker.redis.url'),
+  factStore: factStore
+});
 
 // Ingestion
 const ingestionGate = new IngestionGate({ broker: eventBroker });
 
 // View layer
-const viewMaterializer = new ViewMaterializer({ broker: eventBroker });
+const viewMaterializer = new ViewMaterializer({
+  mongoUrl: config.get('storage.factStore.mongo.url'),
+  dbName: config.get('storage.factStore.mongo.database'),
+  broker: eventBroker
+});
 
-// Agents
-const progressAgent = new ProgressAgent({ broker: eventBroker });
-const relationAgent = new RelationAgent({ broker: eventBroker });
-const insightAgent = new InsightAgent({ broker: eventBroker });
-const narrativeAgent = new NarrativeAgent({ 
-  broker: eventBroker,
-  // Use a shorter interval for testing purposes
-  narrativeInterval: 5 * 60 * 1000 // 5 minutes
-});
-const guardianAgent = new GuardianAgent({ 
-  broker: eventBroker,
-  factStore: factStore 
-});
+// Agent instances
+const agents = {};
 
 // Initialize and start everything
 async function initialize() {
@@ -89,27 +101,95 @@ async function initialize() {
     // Initialize view materializer
     await viewMaterializer.initialize();
     
-    // Initialize and start agents (in the right order)
-    await progressAgent.initialize();
-    await progressAgent.start();
+    // Initialize and start agents based on configuration
+    await initializeAgents();
     
-    await relationAgent.initialize();
-    await relationAgent.start();
-    
-    await insightAgent.initialize();
-    await insightAgent.start();
-    
-    await narrativeAgent.initialize();
-    await narrativeAgent.start();
-    
-    await guardianAgent.initialize();
-    await guardianAgent.start();
+    // Set up config change handler for agent management
+    config.onChange(handleConfigChange);
     
     console.log('AgentWeb backend initialized successfully');
   } catch (error) {
     console.error('Failed to initialize AgentWeb backend:', error);
     process.exit(1);
   }
+}
+
+// Initialize agents based on configuration
+async function initializeAgents() {
+  // Progress Agent
+  if (config.get('agents.ProgressAgent', true)) {
+    agents.progressAgent = new ProgressAgent({ broker: eventBroker });
+    await agents.progressAgent.initialize();
+    await agents.progressAgent.start();
+    console.log('ProgressAgent started');
+  }
+  
+  // Relation Agent
+  if (config.get('agents.RelationAgent', true)) {
+    agents.relationAgent = new RelationAgent({ broker: eventBroker });
+    await agents.relationAgent.initialize();
+    await agents.relationAgent.start();
+    console.log('RelationAgent started');
+  }
+  
+  // Insight Agent
+  if (config.get('agents.InsightAgent', true)) {
+    agents.insightAgent = new InsightAgent({ broker: eventBroker });
+    await agents.insightAgent.initialize();
+    await agents.insightAgent.start();
+    console.log('InsightAgent started');
+  }
+  
+  // Narrative Agent
+  if (config.get('agents.NarrativeAgent', true)) {
+    agents.narrativeAgent = new NarrativeAgent({ 
+      broker: eventBroker,
+      narrativeInterval: config.get('agents.narrativeAgent.narrativeInterval', 5 * 60 * 1000)
+    });
+    await agents.narrativeAgent.initialize();
+    await agents.narrativeAgent.start();
+    console.log('NarrativeAgent started');
+  }
+  
+  // Guardian Agent
+  if (config.get('agents.GuardianAgent', true)) {
+    agents.guardianAgent = new GuardianAgent({ 
+      broker: eventBroker,
+      factStore: factStore 
+    });
+    await agents.guardianAgent.initialize();
+    await agents.guardianAgent.start();
+    console.log('GuardianAgent started');
+  }
+  
+  // Forecast Agent (experimental)
+  if (config.get('agents.ForecastAgent', false)) {
+    agents.forecastAgent = new ForecastAgent({ broker: eventBroker });
+    await agents.forecastAgent.initialize();
+    await agents.forecastAgent.start();
+    console.log('ForecastAgent started');
+  }
+}
+
+// Handler for configuration changes
+async function handleConfigChange(newConfig) {
+  console.log('Detected configuration change, updating agents...');
+  
+  // Handle Forecast Agent toggle
+  const enableForecast = config.get('agents.ForecastAgent', false);
+  
+  if (enableForecast && !agents.forecastAgent) {
+    console.log('Starting ForecastAgent...');
+    agents.forecastAgent = new ForecastAgent({ broker: eventBroker });
+    await agents.forecastAgent.initialize();
+    await agents.forecastAgent.start();
+  } else if (!enableForecast && agents.forecastAgent) {
+    console.log('Stopping ForecastAgent...');
+    await agents.forecastAgent.stop();
+    delete agents.forecastAgent;
+  }
+  
+  // Similar logic can be added for other toggleable agents
 }
 
 // Check if MongoDB and Redis are available
@@ -119,9 +199,7 @@ function checkDependencies() {
     require('mongodb');
     require('redis');
     
-    // If both are available, check if they're running
-    // This is a simple check - in production you'd want to actually try to connect
-    
+    // If both are available, return true
     return true;
   } catch (error) {
     console.warn('MongoDB or Redis modules not available, using mock implementations');
@@ -187,7 +265,8 @@ app.get('/api/projects/:projectId/insights', async (req, res) => {
 app.get('/api/narratives', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    const narratives = await viewMaterializer.getLatestNarratives(limit);
+    const kind = req.query.kind;
+    const narratives = await viewMaterializer.getLatestNarratives(limit, kind);
     res.json(narratives);
   } catch (error) {
     console.error('Error getting narratives:', error);
@@ -196,7 +275,7 @@ app.get('/api/narratives', async (req, res) => {
 });
 
 // Serve React app in production
-if (process.env.NODE_ENV === 'production') {
+if (config.get('system.environment') === 'production') {
   // Serve static files
   app.use(express.static(path.join(__dirname, '../../build')));
   
@@ -256,61 +335,56 @@ viewMaterializer.on('dependencyAdded', (data) => {
   });
 });
 
-viewMaterializer.on('insightRaised', (projectId, data) => {
+viewMaterializer.on('insightAdded', (projectId, data) => {
   io.to(`project:${projectId}`).to('all-updates').emit('update', {
-    kind: 'insightRaised',
+    kind: 'insightAdded',
     data
   });
 });
 
-viewMaterializer.on('narrativeGenerated', (data) => {
+viewMaterializer.on('narrativeAdded', (data) => {
   io.to('all-updates').emit('update', {
-    kind: 'narrativeGenerated',
+    kind: 'narrativeAdded',
     data
   });
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+// Start the server
+const PORT = config.get('api.port', 3000);
+server.listen(PORT, () => {
+  console.log(`AgentWeb server listening on port ${PORT}`);
+  
+  // Save PID for the reload script
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    fs.writeFileSync(path.join(process.cwd(), '.pid'), process.pid.toString());
+    console.log(`PID ${process.pid} saved to .pid file`);
+  } catch (error) {
+    console.error('Failed to save PID file:', error);
+  }
+  
+  initialize();
 });
 
-// Startup
-const PORT = process.env.PORT || 4000;
-
-server.listen(PORT, async () => {
-  console.log(`AgentWeb backend server listening on port ${PORT}`);
-  await initialize();
-});
-
-// Graceful shutdown
+// Handle graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully...');
+  console.log('SIGTERM received, shutting down gracefully');
   
-  // Stop all agents
-  await narrativeAgent.stop();
-  await insightAgent.stop();
-  await relationAgent.stop();
-  await progressAgent.stop();
-  await guardianAgent.stop();
-  
-  // Close view materializer
-  await viewMaterializer.close();
+  // Close all agents
+  for (const agent of Object.values(agents)) {
+    if (agent && agent.stop) {
+      await agent.stop();
+    }
+  }
   
   // Close core components
   await eventBroker.close();
-  
-  // Close server
+  await factStore.close();
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
   });
-  
-  // Force close after timeout
-  setTimeout(() => {
-    console.error('Forced shutdown after timeout');
-    process.exit(1);
-  }, 10000);
 });
 
 module.exports = {
@@ -320,9 +394,10 @@ module.exports = {
   factStore,
   eventBroker,
   viewMaterializer,
-  progressAgent,
-  relationAgent,
-  insightAgent,
-  narrativeAgent,
-  guardianAgent
+  progressAgent: agents.progressAgent,
+  relationAgent: agents.relationAgent,
+  insightAgent: agents.insightAgent,
+  narrativeAgent: agents.narrativeAgent,
+  guardianAgent: agents.guardianAgent,
+  forecastAgent: agents.forecastAgent
 }; 

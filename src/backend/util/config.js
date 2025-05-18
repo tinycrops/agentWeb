@@ -4,7 +4,8 @@
  * Loads and merges configuration from:
  * 1. Default configuration (config/default.yml)
  * 2. Environment-specific configuration (config/{env}.yml)
- * 3. Environment variables (replacing ${VAR_NAME} placeholders)
+ * 3. Feature flags (config/flags.yml)
+ * 4. Environment variables (replacing ${VAR_NAME} placeholders)
  */
 const yaml = require('yaml');
 const fs = require('fs');
@@ -14,6 +15,19 @@ class ConfigManager {
   constructor() {
     this.config = {};
     this.loaded = false;
+    this.flagsPath = '';
+    this.flagsStats = null;
+    this.setupSighupHandler();
+  }
+
+  /**
+   * Setup SIGHUP handler for hot-reloading configuration
+   */
+  setupSighupHandler() {
+    process.on('SIGHUP', () => {
+      console.log('Received SIGHUP signal, reloading configuration...');
+      this.reloadFlags();
+    });
   }
 
   /**
@@ -40,8 +54,19 @@ class ConfigManager {
         console.warn(`No environment config found for '${env}', using defaults only`);
       }
 
+      // Load feature flags
+      this.flagsPath = path.resolve(process.cwd(), 'config/flags.yml');
+      let flagsConfig = {};
+      
+      try {
+        flagsConfig = this.loadYamlFileWithStats(this.flagsPath);
+      } catch (error) {
+        console.warn('No feature flags found, continuing without flags');
+      }
+
       // Merge configurations
       this.config = this.deepMerge(defaultConfig, envConfig);
+      this.config = this.deepMerge(this.config, flagsConfig);
       
       // Process environment variable placeholders
       this.processEnvVars(this.config);
@@ -63,6 +88,102 @@ class ConfigManager {
   loadYamlFile(filePath) {
     const content = fs.readFileSync(filePath, 'utf8');
     return yaml.parse(content);
+  }
+
+  /**
+   * Load a YAML file and store its file stats
+   * 
+   * @param {string} filePath - Path to the YAML file
+   * @returns {Object} Parsed YAML content
+   */
+  loadYamlFileWithStats(filePath) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    this.flagsStats = fs.statSync(filePath);
+    return yaml.parse(content);
+  }
+
+  /**
+   * Reload feature flags when triggered by SIGHUP
+   */
+  reloadFlags() {
+    try {
+      if (!this.flagsPath) {
+        console.warn('No flags path set, cannot reload flags');
+        return;
+      }
+
+      // Check if flags file has been modified
+      const currentStats = fs.statSync(this.flagsPath);
+      
+      if (this.flagsStats && currentStats.mtime.getTime() === this.flagsStats.mtime.getTime()) {
+        console.log('Flags file has not changed, skipping reload');
+        return;
+      }
+
+      // Load new flags
+      const flagsConfig = this.loadYamlFileWithStats(this.flagsPath);
+      
+      // Backup current flags for comparison
+      const previousFlags = { 
+        agents: { ...this.config.agents }, 
+        features: { ...this.config.features } 
+      };
+      
+      // Update config with new flags
+      if (flagsConfig.agents) {
+        this.config.agents = { ...this.config.agents, ...flagsConfig.agents };
+      }
+      
+      if (flagsConfig.features) {
+        this.config.features = { ...this.config.features, ...flagsConfig.features };
+      }
+      
+      // Process environment variable placeholders
+      this.processEnvVars(this.config);
+      
+      // Report changes
+      console.log('Feature flags reloaded successfully');
+      this.logConfigChanges(previousFlags, this.config);
+      
+      // Emit event for subscribers
+      this.emitConfigChanged();
+    } catch (error) {
+      console.error('Failed to reload feature flags:', error);
+    }
+  }
+
+  /**
+   * Log changes in configuration after reload
+   * 
+   * @param {Object} previous - Previous configuration
+   * @param {Object} current - Current configuration
+   */
+  logConfigChanges(previous, current) {
+    // Log changes in agents configuration
+    if (previous.agents && current.agents) {
+      for (const agent in current.agents) {
+        if (previous.agents[agent] !== current.agents[agent]) {
+          console.log(`Agent config changed: ${agent} ${previous.agents[agent]} -> ${current.agents[agent]}`);
+        }
+      }
+    }
+    
+    // Log changes in features configuration
+    if (previous.features && current.features) {
+      for (const feature in current.features) {
+        if (previous.features[feature] !== current.features[feature]) {
+          console.log(`Feature config changed: ${feature} ${previous.features[feature]} -> ${current.features[feature]}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Emit configuration changed event
+   */
+  emitConfigChanged() {
+    // Use process events to notify subscribers
+    process.emit('configChanged', this.config);
   }
 
   /**
@@ -125,7 +246,14 @@ class ConfigManager {
             console.warn(`Environment variable '${envVar}' not found for config path '${currentPath}'`);
           }
           
-          obj[key] = value !== undefined ? value : obj[key];
+          // Convert 'true'/'false' strings to booleans
+          if (value === 'true') {
+            obj[key] = true;
+          } else if (value === 'false') {
+            obj[key] = false;
+          } else {
+            obj[key] = value !== undefined ? value : obj[key];
+          }
         }
       }
     }
@@ -168,6 +296,19 @@ class ConfigManager {
     }
     
     return this.config;
+  }
+
+  /**
+   * Register a callback that's called when configuration changes
+   * 
+   * @param {Function} callback - Function to call when configuration changes
+   */
+  onChange(callback) {
+    if (typeof callback !== 'function') {
+      throw new Error('onChange callback must be a function');
+    }
+    
+    process.on('configChanged', callback);
   }
 }
 

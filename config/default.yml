@@ -5,6 +5,7 @@ system:
   name: "AgentWeb"
   environment: "development"
   logLevel: "info"
+  useMocks: false
 
 # Storage configuration
 storage:
@@ -17,6 +18,9 @@ storage:
     file:
       path: "./data/events.json"
     schemaVersion: 2
+  retention:
+    hotDays: 120
+    archivalEnabled: false
 
 # Messaging configuration
 messaging:
@@ -63,6 +67,11 @@ agents:
     enabled: true
     subscribedEvents: ["ProjectProgressCalculated", "DependencyEdgeAdded", "EnvelopeWritten"]
     snapshotInterval: 100
+    
+  # Forecast Agent (experimental)
+  forecastAgent:
+    enabled: false
+    subscribedEvents: ["ProjectProgressCalculated"]
 
 # API configuration
 api:
@@ -91,4 +100,13 @@ socketio:
 # Frontend configuration
 frontend:
   port: 3001
-  devServerPort: 3001 
+  devServerPort: 3001
+
+# Security configuration
+security:
+  jwtSecret: "your-secret-key-here"
+  jwtAudience: "agentweb-api"
+  rateLimit:
+    windowMs: 60000  # 1 minute
+    max: 60  # requests per minute
+    websocketMax: 10  # new connections per minute per IP 

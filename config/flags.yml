@@ -1,0 +1,12 @@
+agents:
+  ForecastAgent: ${ENABLE_FORECAST_AGENT}  # env overrides
+  GuardianAgent: true
+  ProgressAgent: true
+  RelationAgent: true
+  InsightAgent: true
+  NarrativeAgent: true
+
+features:
+  jsonSchemaValidation: ${ENABLE_SCHEMA_VALIDATION}
+  horizontalScaling: false
+  archiving: false 

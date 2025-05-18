@@ -8,6 +8,7 @@ const { MongoClient } = require('mongodb');
 const Event = require('./Event');
 const EventFactory = require('./EventFactory');
 const { v4: uuidv4 } = require('uuid');
+const config = require('../util/config');
 
 class FactStore {
   /**
@@ -20,10 +21,10 @@ class FactStore {
    * @param {number} options.schemaVersion - Schema version to use
    */
   constructor(options = {}) {
-    this.mongoUrl = options.mongoUrl || process.env.MONGODB_URL || 'mongodb://localhost:27017';
-    this.dbName = options.dbName || process.env.MONGODB_DB || 'agentWeb';
-    this.collectionName = options.collectionName || 'events';
-    this.schemaVersion = options.schemaVersion || 2; // Default to v2 schema
+    this.mongoUrl = options.mongoUrl || config.get('storage.factStore.mongo.url', 'mongodb://localhost:27017');
+    this.dbName = options.dbName || config.get('storage.factStore.mongo.database', 'agentWeb');
+    this.collectionName = options.collectionName || config.get('storage.factStore.mongo.collection', 'events');
+    this.schemaVersion = options.schemaVersion || config.get('storage.factStore.schemaVersion', 2);
     this.sourceId = `factstore-${Date.now()}`;
     this.client = null;
     this.db = null;
