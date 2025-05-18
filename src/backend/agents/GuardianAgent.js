@@ -44,6 +44,20 @@ class GuardianAgent extends BaseAgent {
   }
 
   /**
+   * Initialize the agent and ensure factStore is initialized
+   * 
+   * @param {EventBroker} broker - Event broker to use if not provided in constructor
+   */
+  async initialize(broker = null) {
+    await super.initialize(broker);
+    
+    // Ensure factStore is initialized
+    await this.factStore.initialize();
+    
+    return true;
+  }
+
+  /**
    * Process an incoming event
    * 
    * @param {Event} event - Event to process

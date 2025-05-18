@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    environment:
+      # API Keys (replace with your own)
+      - OPENAI_API_KEY=your-openai-key-here
+      - GITHUB_TOKEN=your-github-token-here
+      - ANTHROPIC_API_KEY=your-anthropic-key-here
+      - GEMINI_API_KEY=your-gemini-key-here
+      - HF_TOKEN=your-huggingface-token-here
+      
+      # Security tokens (use strong random strings)
+      - JWT_SECRET=generate-a-secure-random-string
+      - GITHUB_WEBHOOK_SECRET=generate-a-secure-random-string
+      - CI_WEBHOOK_SECRET=generate-a-secure-random-string
+  
+  # Frontend doesn't typically need env vars, but could be added
+  frontend:
+    environment:
+      - NODE_ENV=development
+
+# Example for development only - do not commit actual secrets
+# To use: copy to docker-compose.override.yml and add your actual secrets 

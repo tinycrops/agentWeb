@@ -1,0 +1,123 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        env:
+          # Use placeholder values for secrets in tests
+          JWT_SECRET: ${{ secrets.JWT_SECRET || 'test-jwt-secret' }}
+          GITHUB_WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET || 'test-webhook-secret' }}
+          CI_WEBHOOK_SECRET: ${{ secrets.CI_WEBHOOK_SECRET || 'test-ci-webhook-secret' }}
+          # Redact actual secrets from logs
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-xxxxxxxxxxxxxxxxxxxx' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || 'ghp_xxxxxxxxxxxxxxxxxxxx' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'sk-ant-xxxxxxxxxxxxxxxxxxxx' }}
+          # Set up test database connections
+          MONGODB_URL: mongodb://localhost:27017
+          REDIS_URL: redis://localhost:6379
+          USE_MOCKS: true
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/agentweb-backend:latest
+          build-args: |
+            NODE_ENV=production
+          secrets: |
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            GITHUB_WEBHOOK_SECRET=${{ secrets.GITHUB_WEBHOOK_SECRET }}
+            CI_WEBHOOK_SECRET=${{ secrets.CI_WEBHOOK_SECRET }}
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/agentweb-frontend:latest
+          build-args: |
+            NODE_ENV=production 

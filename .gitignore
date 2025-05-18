@@ -4,12 +4,15 @@ npm-debug.log
 yarn-error.log
 yarn-debug.log
 
-# Environment variables
+# Environment variables and secrets
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+*.pem
+*.key
+docker-compose.override.yml
 
 # Logs
 logs
@@ -32,7 +35,12 @@ Thumbs.db
 # MongoDB data directory
 data/
 
+# Python
 /__pycache__/
 team_chat/
 .venv
 discord_export.py
+
+# Temporary files
+*.tmp
+*.bak
