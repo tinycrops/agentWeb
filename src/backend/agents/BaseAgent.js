@@ -5,6 +5,8 @@
  * Handles common functionality like subscribing to events and publishing derived events.
  */
 const EventBroker = require('../core/EventBroker');
+const fs = require('fs').promises;
+const path = require('path');
 
 class BaseAgent {
   /**
@@ -15,6 +17,8 @@ class BaseAgent {
    * @param {string} options.name - Human-readable name
    * @param {EventBroker} options.broker - Event broker to use
    * @param {Array<string>} options.subscribedEvents - Event kinds to subscribe to
+   * @param {number} options.snapshotInterval - Number of events to process before taking a snapshot
+   * @param {string} options.snapshotDir - Directory to store snapshots
    */
   constructor(options = {}) {
     this.id = options.id || `agent-${Date.now()}`;
@@ -24,6 +28,10 @@ class BaseAgent {
     this.subscriptions = [];
     this.isInitialized = false;
     this.isRunning = false;
+    this.processedEventCount = 0;
+    this.snapshotInterval = options.snapshotInterval || 0; // 0 = disabled
+    this.snapshotDir = options.snapshotDir || './snapshots';
+    this.lastSnapshotId = null;
   }
 
   /**
@@ -44,6 +52,18 @@ class BaseAgent {
 
     // Ensure broker is initialized
     await this.broker.initialize();
+
+    // Create snapshot directory if it doesn't exist and snapshots are enabled
+    if (this.snapshotInterval > 0) {
+      try {
+        await fs.mkdir(this.snapshotDir, { recursive: true });
+      } catch (error) {
+        console.warn(`Failed to create snapshot directory: ${error.message}`);
+      }
+      
+      // Try to load the latest snapshot
+      await this.loadLatestSnapshot();
+    }
 
     this.isInitialized = true;
     console.log(`Agent ${this.name} (${this.id}) initialized`);
@@ -82,6 +102,11 @@ class BaseAgent {
   async stop() {
     if (!this.isRunning) return;
 
+    // Take a final snapshot before stopping
+    if (this.snapshotInterval > 0) {
+      await this.takeSnapshot();
+    }
+
     // Unsubscribe from all events
     for (const subscription of this.subscriptions) {
       await this.broker.unsubscribe(subscription);
@@ -99,7 +124,19 @@ class BaseAgent {
    * @param {Event} event - Incoming event to process
    */
   async processEvent(event) {
-    throw new Error('processEvent must be implemented by subclasses');
+    if (!this.shouldProcessEvent(event)) return;
+    
+    // Increment event counter and check if snapshot should be taken
+    this.processedEventCount++;
+    
+    // Take snapshot if interval is reached
+    if (this.snapshotInterval > 0 && this.processedEventCount % this.snapshotInterval === 0) {
+      await this.takeSnapshot(event.id);
+    }
+    
+    // This is now a base implementation, not an error
+    // It does the common tasks and can be extended by subclasses
+    return event;
   }
 
   /**
@@ -136,6 +173,108 @@ class BaseAgent {
    */
   shouldProcessEvent(event) {
     return this.subscribedEvents.includes(event.kind);
+  }
+
+  /**
+   * Get a snapshot of the agent's state
+   * Implement in subclasses to provide state-specific snapshot data
+   * 
+   * @returns {Object|null} The agent's state or null if not implemented
+   */
+  getSnapshot() {
+    // Base implementation returns minimal state
+    return {
+      id: this.id,
+      name: this.name,
+      processedEventCount: this.processedEventCount,
+      lastEventTimestamp: Date.now()
+    };
+  }
+
+  /**
+   * Load a snapshot into the agent's state
+   * Implement in subclasses to restore from snapshot data
+   * 
+   * @param {Object} snapshot - The snapshot to load
+   * @returns {boolean} Whether the snapshot was loaded successfully
+   */
+  loadSnapshot(snapshot) {
+    if (!snapshot) return false;
+    
+    // Base implementation only restores basic counters
+    this.processedEventCount = snapshot.processedEventCount || 0;
+    return true;
+  }
+
+  /**
+   * Take a snapshot of the agent's state and save it
+   * 
+   * @param {string} eventId - ID of the event that triggered the snapshot
+   * @returns {boolean} Whether the snapshot was saved successfully
+   */
+  async takeSnapshot(eventId = null) {
+    if (this.snapshotInterval <= 0) return false;
+    
+    try {
+      const snapshot = this.getSnapshot();
+      if (!snapshot) return false;
+      
+      // Add metadata
+      snapshot.timestamp = Date.now();
+      snapshot.eventId = eventId;
+      snapshot.agentId = this.id;
+      snapshot.agentName = this.name;
+      
+      const filename = path.join(
+        this.snapshotDir, 
+        `${this.name}-${this.id}-${snapshot.timestamp}.json`
+      );
+      
+      await fs.writeFile(filename, JSON.stringify(snapshot, null, 2));
+      this.lastSnapshotId = filename;
+      
+      console.log(`Agent ${this.name} snapshot saved to ${filename}`);
+      return true;
+    } catch (error) {
+      console.error(`Failed to save snapshot for agent ${this.name}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Load the latest snapshot for this agent
+   * 
+   * @returns {boolean} Whether a snapshot was loaded successfully
+   */
+  async loadLatestSnapshot() {
+    try {
+      // Find all snapshot files for this agent
+      const files = await fs.readdir(this.snapshotDir);
+      const snapshotFiles = files.filter(file => 
+        file.startsWith(`${this.name}-${this.id}`) && file.endsWith('.json')
+      );
+      
+      if (snapshotFiles.length === 0) return false;
+      
+      // Sort by timestamp (most recent first)
+      snapshotFiles.sort().reverse();
+      
+      // Load the most recent snapshot
+      const snapshotPath = path.join(this.snapshotDir, snapshotFiles[0]);
+      const data = await fs.readFile(snapshotPath, 'utf8');
+      const snapshot = JSON.parse(data);
+      
+      const success = this.loadSnapshot(snapshot);
+      if (success) {
+        this.lastSnapshotId = snapshotPath;
+        console.log(`Agent ${this.name} restored from snapshot ${snapshotPath}`);
+      }
+      
+      return success;
+    } catch (error) {
+      console.warn(`Failed to load snapshot for agent ${this.name}:`, error);
+      return false;
+    }
   }
 }
 

@@ -19,7 +19,8 @@ class NarrativeAgent extends BaseAgent {
     super({
       ...options,
       name: 'NarrativeAgent',
-      subscribedEvents: ['InsightRaised']
+      subscribedEvents: ['InsightRaised'],
+      snapshotInterval: options.snapshotInterval || 5
     });
     
     // State variables
@@ -81,6 +82,9 @@ class NarrativeAgent extends BaseAgent {
    * @param {Event} event - Incoming event
    */
   async processEvent(event) {
+    // Call super to handle snapshot scheduling
+    await super.processEvent(event);
+    
     if (!this.shouldProcessEvent(event)) return;
 
     try {
@@ -138,6 +142,9 @@ class NarrativeAgent extends BaseAgent {
     
     await this.publishEvent(narrativeEvent);
     console.log(`Timer narrative generated: ${narrativeId}`);
+    
+    // Take a snapshot after generating a narrative
+    await this.takeSnapshot();
   }
 
   /**
@@ -164,6 +171,9 @@ class NarrativeAgent extends BaseAgent {
     
     await this.publishEvent(narrativeEvent);
     console.log(`Insight narrative generated: ${narrativeId}`);
+    
+    // Take a snapshot after generating a narrative
+    await this.takeSnapshot();
   }
 
   /**
@@ -302,6 +312,53 @@ class NarrativeAgent extends BaseAgent {
     }
     
     return text;
+  }
+
+  /**
+   * Get a snapshot of the NarrativeAgent's state
+   * 
+   * @returns {Object} Agent state snapshot
+   */
+  getSnapshot() {
+    // Get base snapshot from parent
+    const baseSnapshot = super.getSnapshot();
+    
+    // Add NarrativeAgent-specific state
+    return {
+      ...baseSnapshot,
+      lastNarrativeTime: this.lastNarrativeTime,
+      // Only store the most recent events to keep snapshot size reasonable
+      recentEvents: this.recentEvents.slice(-this.maxRecentEvents)
+    };
+  }
+
+  /**
+   * Load a snapshot into the NarrativeAgent's state
+   * 
+   * @param {Object} snapshot - Snapshot to load
+   * @returns {boolean} Whether the snapshot was loaded successfully
+   */
+  loadSnapshot(snapshot) {
+    // Load base snapshot from parent
+    const baseResult = super.loadSnapshot(snapshot);
+    
+    if (!baseResult || !snapshot) return false;
+    
+    try {
+      // Restore NarrativeAgent-specific state
+      if (snapshot.lastNarrativeTime) {
+        this.lastNarrativeTime = snapshot.lastNarrativeTime;
+      }
+      
+      if (Array.isArray(snapshot.recentEvents)) {
+        this.recentEvents = snapshot.recentEvents;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error loading NarrativeAgent snapshot:', error);
+      return false;
+    }
   }
 }
 

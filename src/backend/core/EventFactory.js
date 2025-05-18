@@ -220,6 +220,28 @@ class EventFactory {
       }
     );
   }
+
+  /**
+   * Create a custom event with the specified kind
+   * 
+   * @param {string} kind - Event kind
+   * @param {Object} subject - Event subject
+   * @param {string} source - Event source/creator
+   * @param {string} causedBy - ID of the event that caused this event
+   * @param {Object} payload - Additional payload data
+   * @returns {Event} New custom event
+   */
+  static createCustomEvent(kind, subject, source, causedBy, payload = {}) {
+    return new Event(
+      source,
+      kind,
+      subject,
+      {
+        ...payload,
+        causedBy
+      }
+    );
+  }
 }
 
 module.exports = EventFactory; 

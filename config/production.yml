@@ -1,0 +1,43 @@
+# Production-specific configuration for AgentWeb
+
+# System
+system:
+  environment: "production"
+  logLevel: "warn"  # Less verbose logging in production
+
+# Storage configuration 
+storage:
+  factStore:
+    type: "mongo"
+    mongo:
+      url: "${MONGODB_URL}"  # Use environment variable in production
+      database: "${MONGODB_DB}"
+
+# Messaging configuration
+messaging:
+  broker:
+    type: "redis"
+    redis:
+      url: "${REDIS_URL}"  # Use environment variable in production
+
+# Agent configuration for production
+agents:
+  common:
+    snapshotInterval: 100  # Less frequent snapshots in production
+    snapshotDir: "/var/data/agent-web/snapshots"
+  
+  # Guardian Agent
+  guardianAgent:
+    enabled: true
+    snapshotInterval: 500  # Less frequent snapshots in production
+
+# API configuration
+api:
+  port: "${PORT}"  # Use environment variable in production
+  cors:
+    origin: "${ALLOWED_ORIGIN}"  # Use environment variable in production
+
+# Socket.IO configuration
+socketio:
+  cors:
+    origin: "${ALLOWED_ORIGIN}"  # Use environment variable in production 

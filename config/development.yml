@@ -1,0 +1,30 @@
+# Development-specific configuration for AgentWeb
+
+# System
+system:
+  environment: "development"
+  logLevel: "debug"
+
+# Use in-memory implementations for local development
+storage:
+  factStore:
+    # Use file-based storage for development to persist between restarts
+    type: "file"
+    file:
+      path: "./data/dev-events.json"
+
+messaging:
+  broker:
+    # Use in-memory broker for development
+    type: "in-memory"
+
+# Development settings for agents
+agents:
+  # Common settings for all agents
+  common:
+    snapshotInterval: 10  # Take snapshots more frequently in development
+    snapshotDir: "./snapshots/dev"
+  
+  # Narrative Agent development settings
+  narrativeAgent:
+    narrativeInterval: 60000  # 1 minute in development (instead of 1 hour) 

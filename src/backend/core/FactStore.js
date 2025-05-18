@@ -6,6 +6,8 @@
  */
 const { MongoClient } = require('mongodb');
 const Event = require('./Event');
+const EventFactory = require('./EventFactory');
+const { v4: uuidv4 } = require('uuid');
 
 class FactStore {
   /**
@@ -15,11 +17,14 @@ class FactStore {
    * @param {string} options.mongoUrl - MongoDB connection URL
    * @param {string} options.dbName - Database name
    * @param {string} options.collectionName - Collection name for events
+   * @param {number} options.schemaVersion - Schema version to use
    */
   constructor(options = {}) {
     this.mongoUrl = options.mongoUrl || process.env.MONGODB_URL || 'mongodb://localhost:27017';
     this.dbName = options.dbName || process.env.MONGODB_DB || 'agentWeb';
     this.collectionName = options.collectionName || 'events';
+    this.schemaVersion = options.schemaVersion || 2; // Default to v2 schema
+    this.sourceId = `factstore-${Date.now()}`;
     this.client = null;
     this.db = null;
     this.collection = null;
@@ -44,8 +49,9 @@ class FactStore {
       await this.collection.createIndex({ kind: 1 });
       await this.collection.createIndex({ source: 1 });
       await this.collection.createIndex({ 'subject.projectId': 1 });
+      await this.collection.createIndex({ schemaVersion: 1 });
 
-      console.log('FactStore initialized');
+      console.log(`FactStore initialized (schema v${this.schemaVersion})`);
     } catch (error) {
       console.error('Failed to initialize FactStore:', error);
       throw error;
@@ -68,15 +74,60 @@ class FactStore {
       if (!event.verifyIntegrity()) {
         throw new Error('Event integrity check failed');
       }
-
-      // Insert with upsert to handle idempotence
-      const result = await this.collection.updateOne(
-        { id: event.id },
-        { $setOnInsert: event.toJSON() },
-        { upsert: true }
-      );
-
-      return result.upsertedCount === 1 || result.matchedCount === 1;
+      
+      // Start a session for transaction
+      const session = this.client.startSession();
+      
+      try {
+        let success = false;
+        
+        // Use a transaction to ensure both the event and meta-event are written or neither
+        await session.withTransaction(async () => {
+          // Add schema version to the event
+          const eventWithVersion = {
+            ...event.toJSON(),
+            schemaVersion: this.schemaVersion
+          };
+          
+          // Insert with upsert to handle idempotence
+          const result = await this.collection.updateOne(
+            { id: event.id },
+            { $setOnInsert: eventWithVersion },
+            { upsert: true, session }
+          );
+          
+          success = result.upsertedCount === 1 || result.matchedCount === 1;
+          
+          if (success && result.upsertedCount === 1) {
+            // Only create meta-event if this is a new event
+            // Create and store the EnvelopeWritten meta-event
+            const metaEvent = EventFactory.createCustomEvent(
+              'EnvelopeWritten',
+              { eventId: event.id },
+              this.sourceId,
+              null,
+              {
+                kind: event.kind,
+                source: event.source,
+                ts: event.ts,
+                schemaVersion: this.schemaVersion
+              }
+            );
+            
+            // Add schema version to meta-event
+            const metaEventWithVersion = {
+              ...metaEvent.toJSON(),
+              schemaVersion: this.schemaVersion
+            };
+            
+            await this.collection.insertOne(metaEventWithVersion, { session });
+          }
+        });
+        
+        return success;
+      } finally {
+        await session.endSession();
+      }
     } catch (error) {
       console.error('Failed to append event:', error);
       throw error;
@@ -114,6 +165,7 @@ class FactStore {
    * @param {number} [options.fromTs] - Start timestamp (inclusive)
    * @param {number} [options.toTs] - End timestamp (inclusive)
    * @param {string} [options.projectId] - Filter by project ID
+   * @param {number} [options.schemaVersion] - Filter by schema version
    * @param {number} [options.limit] - Maximum number of events to return
    * @param {number} [options.skip] - Number of events to skip
    * @returns {Array<Event>} Array of matching events
@@ -137,6 +189,10 @@ class FactStore {
       
       if (options.projectId) {
         filter['subject.projectId'] = options.projectId;
+      }
+
+      if (options.schemaVersion) {
+        filter.schemaVersion = options.schemaVersion;
       }
 
       const cursor = this.collection.find(filter)
@@ -197,6 +253,135 @@ class FactStore {
       console.error('Failed to get latest events:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get meta-events for a specific event
+   * 
+   * @param {string} eventId - Event ID to get meta-events for
+   * @returns {Array<Event>} Array of meta-events
+   */
+  async getMetaEvents(eventId) {
+    if (!this.collection) {
+      await this.initialize();
+    }
+
+    try {
+      const docs = await this.collection.find({
+        kind: 'EnvelopeWritten',
+        'subject.eventId': eventId
+      }).toArray();
+      
+      return docs.map(doc => Event.fromJSON(doc));
+    } catch (error) {
+      console.error(`Failed to get meta-events for ${eventId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Migrate events from one schema version to another
+   * 
+   * @param {number} fromVersion - Source schema version
+   * @param {number} toVersion - Target schema version
+   * @returns {number} Number of events migrated
+   */
+  async migrateSchema(fromVersion, toVersion) {
+    if (!this.collection) {
+      await this.initialize();
+    }
+
+    console.log(`Migrating events from schema v${fromVersion} to v${toVersion}`);
+    
+    try {
+      // Find events with the source schema version
+      const cursor = this.collection.find({ 
+        schemaVersion: fromVersion 
+      });
+      
+      let migratedCount = 0;
+      
+      // Process each event for migration
+      for await (const doc of cursor) {
+        // Apply migration transformations based on version
+        const migratedEvent = this.applyMigration(doc, fromVersion, toVersion);
+        
+        // Update the event in the database
+        await this.collection.updateOne(
+          { id: doc.id },
+          { $set: {
+              ...migratedEvent,
+              schemaVersion: toVersion
+            }
+          }
+        );
+        
+        // Create and store migration meta-event
+        const metaEvent = EventFactory.createCustomEvent(
+          'SchemaMigrated',
+          { eventId: doc.id },
+          this.sourceId,
+          null,
+          {
+            fromVersion,
+            toVersion,
+            migratedAt: Date.now()
+          }
+        );
+        
+        // Add schema version to meta-event
+        const metaEventWithVersion = {
+          ...metaEvent.toJSON(),
+          schemaVersion: toVersion
+        };
+        
+        await this.collection.insertOne(metaEventWithVersion);
+        
+        migratedCount++;
+      }
+      
+      console.log(`Migrated ${migratedCount} events from v${fromVersion} to v${toVersion}`);
+      return migratedCount;
+    } catch (error) {
+      console.error(`Failed to migrate schema from v${fromVersion} to v${toVersion}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply migration transformations to an event
+   * 
+   * @param {Object} event - Event document to migrate
+   * @param {number} fromVersion - Source schema version
+   * @param {number} toVersion - Target schema version
+   * @returns {Object} Migrated event
+   */
+  applyMigration(event, fromVersion, toVersion) {
+    // Clone the event to avoid modifying the original
+    const migrated = { ...event };
+    
+    // Apply transformations based on from/to versions
+    if (fromVersion === 1 && toVersion === 2) {
+      // v1 to v2 migration logic
+      // For example, restructuring fields, adding new required fields, etc.
+      
+      // Example transformation: ensure payload is an object
+      if (!migrated.payload) {
+        migrated.payload = {};
+      }
+      
+      // Example: add metadata field if not present
+      if (!migrated.metadata) {
+        migrated.metadata = {
+          migrated: true,
+          originalVersion: fromVersion
+        };
+      }
+    }
+    
+    // Add more version transformation logic as needed
+    
+    return migrated;
   }
 
   /**

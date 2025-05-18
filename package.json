@@ -9,30 +9,35 @@
     "dev:frontend": "cd src/frontend && npm run dev",
     "test": "jest",
     "lint": "eslint .",
-    "simulate": "node scripts/simulate-commit.js"
+    "simulate": "node scripts/simulate-commit.js",
+    "migrate": "node scripts/migrate-schema.js",
+    "replay": "node scripts/replay.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "graphql": "^16.6.0",
-    "express-graphql": "^0.12.0",
-    "socket.io": "^4.7.2",
-    "redis": "^4.6.7",
-    "mongodb": "^5.7.0",
-    "uuid": "^9.0.0",
-    "dotenv": "^16.3.1",
+    "axios": "^1.4.0",
+    "commander": "^11.1.0",
     "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-graphql": "^0.12.0",
+    "graphql": "^16.6.0",
+    "mongodb": "^5.7.0",
     "morgan": "^1.10.0",
-    "axios": "^1.4.0"
+    "redis": "^4.6.7",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0",
+    "yaml": "^2.8.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",
-    "nodemon": "^3.0.1",
     "eslint": "^8.46.0",
-    "jest": "^29.6.2"
+    "fast-check": "^3.13.0",
+    "jest": "^29.6.2",
+    "nodemon": "^3.0.1"
   },
   "engines": {
     "node": ">=16.0.0"
   },
   "author": "",
   "license": "MIT"
-} 
+}

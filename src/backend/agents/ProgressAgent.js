@@ -25,7 +25,8 @@ class ProgressAgent extends BaseAgent {
     super({
       ...options,
       name: 'ProgressAgent',
-      subscribedEvents: ['RepoCommit']
+      subscribedEvents: ['RepoCommit'],
+      snapshotInterval: options.snapshotInterval || 10
     });
     
     // State variables
@@ -39,6 +40,9 @@ class ProgressAgent extends BaseAgent {
    * @param {Event} event - RepoCommit event
    */
   async processEvent(event) {
+    // Call super to handle snapshot scheduling
+    await super.processEvent(event);
+    
     if (!this.shouldProcessEvent(event)) return;
 
     try {
@@ -179,6 +183,52 @@ class ProgressAgent extends BaseAgent {
       seed = (seed * 9301 + 49297) % 233280;
       return seed / 233280;
     };
+  }
+
+  /**
+   * Get a snapshot of the ProgressAgent's state
+   * 
+   * @returns {Object} Agent state snapshot
+   */
+  getSnapshot() {
+    // Get base snapshot from parent
+    const baseSnapshot = super.getSnapshot();
+    
+    // Add ProgressAgent-specific state
+    return {
+      ...baseSnapshot,
+      lastScannedRev: Object.fromEntries(this.lastScannedRev),
+      projectProgress: Object.fromEntries(this.projectProgress)
+    };
+  }
+
+  /**
+   * Load a snapshot into the ProgressAgent's state
+   * 
+   * @param {Object} snapshot - Snapshot to load
+   * @returns {boolean} Whether the snapshot was loaded successfully
+   */
+  loadSnapshot(snapshot) {
+    // Load base snapshot from parent
+    const baseResult = super.loadSnapshot(snapshot);
+    
+    if (!baseResult || !snapshot) return false;
+    
+    try {
+      // Restore ProgressAgent-specific state
+      if (snapshot.lastScannedRev) {
+        this.lastScannedRev = new Map(Object.entries(snapshot.lastScannedRev));
+      }
+      
+      if (snapshot.projectProgress) {
+        this.projectProgress = new Map(Object.entries(snapshot.projectProgress));
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error loading ProgressAgent snapshot:', error);
+      return false;
+    }
   }
 }
 

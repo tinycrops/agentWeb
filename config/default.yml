@@ -1,0 +1,94 @@
+# Default configuration for AgentWeb
+
+# System
+system:
+  name: "AgentWeb"
+  environment: "development"
+  logLevel: "info"
+
+# Storage configuration
+storage:
+  factStore:
+    type: "mongo"  # Options: "mongo", "file"
+    mongo:
+      url: "mongodb://localhost:27017"
+      database: "agentWeb"
+      collection: "events"
+    file:
+      path: "./data/events.json"
+    schemaVersion: 2
+
+# Messaging configuration
+messaging:
+  broker:
+    type: "redis"  # Options: "redis", "in-memory"
+    redis:
+      url: "redis://localhost:6379"
+      keyPrefix: "agent-web:"
+    inMemory:
+      # No specific config for in-memory broker
+      bufferSize: 1000
+
+# Agent configuration
+agents:
+  # Common settings for all agents
+  common:
+    snapshotInterval: 50
+    snapshotDir: "./snapshots"
+  
+  # Progress Agent
+  progressAgent:
+    enabled: true
+    subscribedEvents: ["RepoCommit"]
+  
+  # Relation Agent
+  relationAgent:
+    enabled: true
+    subscribedEvents: ["RepoCommit"]
+  
+  # Insight Agent
+  insightAgent:
+    enabled: true
+    subscribedEvents: ["ProjectProgressCalculated", "DependencyEdgeAdded"]
+  
+  # Narrative Agent
+  narrativeAgent:
+    enabled: true
+    subscribedEvents: ["InsightRaised"]
+    narrativeInterval: 3600000  # 1 hour in milliseconds
+    maxRecentEvents: 50
+  
+  # Guardian Agent
+  guardianAgent:
+    enabled: true
+    subscribedEvents: ["ProjectProgressCalculated", "DependencyEdgeAdded", "EnvelopeWritten"]
+    snapshotInterval: 100
+
+# API configuration
+api:
+  port: 3000
+  cors:
+    origin: "http://localhost:3001"
+    methods: ["GET", "POST"]
+  
+  # GraphQL
+  graphql:
+    enabled: true
+    path: "/graphql"
+  
+  # REST
+  rest:
+    enabled: true
+    basePath: "/api"
+
+# Socket.IO configuration
+socketio:
+  enabled: true
+  path: "/socket.io"
+  cors:
+    origin: "http://localhost:3001"
+
+# Frontend configuration
+frontend:
+  port: 3001
+  devServerPort: 3001 
