@@ -21,7 +21,7 @@ let FactStore, EventBroker, ViewMaterializer;
 config.load();
 
 // Check if we should use mock implementations
-const useMocks = config.get('system.useMocks', false) || !checkDependencies();
+const useMocks = true; // Force usage of mocks for testing
 
 if (useMocks) {
   console.log('Using mock implementations for FactStore, EventBroker, and ViewMaterializer');
@@ -43,7 +43,6 @@ const RelationAgent = require('./agents/RelationAgent');
 const InsightAgent = require('./agents/InsightAgent');
 const NarrativeAgent = require('./agents/NarrativeAgent');
 const GuardianAgent = require('./agents/GuardianAgent');
-const ForecastAgent = require('./agents/ForecastAgent');
 
 // Create Express application
 const app = express();
@@ -57,8 +56,10 @@ const io = new SocketIOServer(server, {
 
 // Middleware
 app.use(cors({
-  origin: config.get('api.cors.origin', 'http://localhost:3000'),
-  methods: config.get('api.cors.methods', ['GET', 'POST'])
+  origin: config.get('api.cors.origin', 'http://localhost:3001'),
+  methods: ['GET', 'POST'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use(morgan('dev'));
@@ -161,35 +162,11 @@ async function initializeAgents() {
     await agents.guardianAgent.start();
     console.log('GuardianAgent started');
   }
-  
-  // Forecast Agent (experimental)
-  if (config.get('agents.ForecastAgent', false)) {
-    agents.forecastAgent = new ForecastAgent({ broker: eventBroker });
-    await agents.forecastAgent.initialize();
-    await agents.forecastAgent.start();
-    console.log('ForecastAgent started');
-  }
 }
 
 // Handler for configuration changes
 async function handleConfigChange(newConfig) {
   console.log('Detected configuration change, updating agents...');
-  
-  // Handle Forecast Agent toggle
-  const enableForecast = config.get('agents.ForecastAgent', false);
-  
-  if (enableForecast && !agents.forecastAgent) {
-    console.log('Starting ForecastAgent...');
-    agents.forecastAgent = new ForecastAgent({ broker: eventBroker });
-    await agents.forecastAgent.initialize();
-    await agents.forecastAgent.start();
-  } else if (!enableForecast && agents.forecastAgent) {
-    console.log('Stopping ForecastAgent...');
-    await agents.forecastAgent.stop();
-    delete agents.forecastAgent;
-  }
-  
-  // Similar logic can be added for other toggleable agents
 }
 
 // Check if MongoDB and Redis are available
@@ -350,7 +327,7 @@ viewMaterializer.on('narrativeAdded', (data) => {
 });
 
 // Start the server
-const PORT = config.get('api.port', 3000);
+const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`AgentWeb server listening on port ${PORT}`);
   
@@ -398,6 +375,5 @@ module.exports = {
   relationAgent: agents.relationAgent,
   insightAgent: agents.insightAgent,
   narrativeAgent: agents.narrativeAgent,
-  guardianAgent: agents.guardianAgent,
-  forecastAgent: agents.forecastAgent
+  guardianAgent: agents.guardianAgent
 }; 

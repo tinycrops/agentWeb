@@ -5,8 +5,19 @@
  * into the canonical event structure.
  */
 const express = require('express');
+const multer = require('multer');
+const { v4: uuidv4 } = require('uuid');
 const EventFactory = require('../core/EventFactory');
 const EventBroker = require('../core/EventBroker');
+const { extractText } = require('../util/documentUtils');
+
+// Configure multer for memory storage
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  }
+});
 
 class IngestionGate {
   /**
@@ -25,6 +36,45 @@ class IngestionGate {
    * Set up the Express routes for ingestion
    */
   setupRoutes() {
+    // Document upload endpoint
+    this.router.post('/upload', upload.single('file'), async (req, res) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({
+            success: false,
+            message: 'No file provided'
+          });
+        }
+        
+        const { originalname, mimetype, buffer } = req.file;
+        const text = await extractText(buffer, mimetype);
+        const docId = uuidv4();
+        const userId = req.body.userId || 'chatbot';
+        
+        const event = EventFactory.createDocumentUploaded(
+          docId, 
+          originalname, 
+          mimetype, 
+          text, 
+          userId
+        );
+        
+        const ok = await this.broker.publish(event);
+        
+        res.status(ok ? 202 : 500).json({
+          success: ok,
+          docId,
+          message: ok ? 'Document uploaded successfully' : 'Failed to process document'
+        });
+      } catch (error) {
+        console.error('Error processing document upload:', error);
+        res.status(500).json({ 
+          success: false, 
+          message: 'Internal server error' 
+        });
+      }
+    });
+
     // GitHub webhook endpoint
     this.router.post('/github', async (req, res) => {
       try {

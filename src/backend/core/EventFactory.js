@@ -222,6 +222,31 @@ class EventFactory {
   }
 
   /**
+   * Create a DocumentUploaded event
+   * 
+   * @param {string} docId - ID of the document
+   * @param {string} fileName - Name of the uploaded file
+   * @param {string} mime - MIME type of the document
+   * @param {string} rawText - Extracted text content from the document
+   * @param {string} userId - ID of the user who uploaded the document
+   * @returns {Event} New DocumentUploaded event
+   */
+  static createDocumentUploaded(docId, fileName, mime, rawText, userId) {
+    return new Event(
+      userId ?? 'chatbot', // source
+      'DocumentUploaded', // kind
+      {
+        docId,
+        fileName,
+        mime
+      },
+      {
+        rawText
+      }
+    );
+  }
+
+  /**
    * Create a custom event with the specified kind
    * 
    * @param {string} kind - Event kind
