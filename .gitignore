@@ -47,3 +47,5 @@ team_chat/
 
 # Process IDs
 .pid
+
+model-cache/
