@@ -187,6 +187,9 @@ function checkDependencies() {
 // Routes
 app.use('/api/ingestion', ingestionGate.getRouter());
 
+// Serve the webcam demo at /camera
+app.use('/camera', express.static(path.join(__dirname, '../../frontend/public/camera')));
+
 // API endpoints for the view layer
 app.get('/api/projects', async (req, res) => {
   try {

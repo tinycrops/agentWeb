@@ -136,6 +136,36 @@ class IngestionGate {
       }
     });
 
+    // Vision observation endpoint
+    this.router.post('/vision', async (req, res) => {
+      try {
+        const { text, agentId, frameUrl } = req.body;
+        
+        if (!text) {
+          return res.status(400).json({
+            success: false,
+            message: 'Missing required field: text'
+          });
+        }
+        
+        const event = EventFactory.createVisionObservation(
+          text,
+          agentId || 'webcam-monitor',
+          frameUrl || null
+        );
+        
+        const result = await this.broker.publish(event);
+        
+        res.status(result ? 202 : 400).json({
+          success: result,
+          message: result ? 'Vision observation accepted' : 'Failed to process vision observation'
+        });
+      } catch (error) {
+        console.error('Error processing vision observation:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+      }
+    });
+
     // Generic event injection endpoint (for testing)
     this.router.post('/event', async (req, res) => {
       try {

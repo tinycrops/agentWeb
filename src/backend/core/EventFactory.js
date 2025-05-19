@@ -247,6 +247,24 @@ class EventFactory {
   }
 
   /**
+   * Create a VisionObservation event
+   * 
+   * @param {string} text - Vision observation text
+   * @param {string} agentId - ID of the agent
+   * @param {string} frameUrl - URL of the frame/image
+   * @param {string} causedBy - ID of the event that caused this observation
+   * @returns {Event} New VisionObservation event
+   */
+  static createVisionObservation(text, agentId, frameUrl, causedBy=null) {
+    return new Event(
+      agentId,
+      'VisionObservation',
+      { frameUrl },
+      { text, causedBy }
+    );
+  }
+
+  /**
    * Create a custom event with the specified kind
    * 
    * @param {string} kind - Event kind

@@ -19,6 +19,15 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
+  llamacpp:
+    build:
+      context: ./docker/llamacpp
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/llamacpp/model-cache:/model
+    restart: unless-stopped
+
 volumes:
   mongo-data:
   redis-data: 
