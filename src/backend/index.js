@@ -55,14 +55,17 @@ const io = new SocketIOServer(server, {
 });
 
 // Middleware
-app.use(cors({
-  origin: config.get('api.cors.origin', 'http://localhost:3001'),
-  methods: ['GET', 'POST'],
-  credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 app.use(express.json());
 app.use(morgan('dev'));
+
+// Global CORS middleware to ensure frontend can communicate with backend
+app.use((req,res,next)=>{
+  res.header('Access-Control-Allow-Origin','*');
+  res.header('Access-Control-Allow-Headers','Content-Type');
+  res.header('Access-Control-Allow-Methods','GET,POST,OPTIONS');
+  if (req.method==='OPTIONS') return res.sendStatus(200);
+  next();
+});
 
 // Core components
 const factStore = new FactStore({
@@ -187,8 +190,9 @@ function checkDependencies() {
 // Routes
 app.use('/api/ingestion', ingestionGate.getRouter());
 
-// Serve the webcam demo at /camera
+// Serve the webcam demo at /camera - try both locations
 app.use('/camera', express.static(path.join(__dirname, '../../frontend/public/camera')));
+app.use('/camera', express.static(path.join(__dirname, '../../public/camera')));
 
 // API endpoints for the view layer
 app.get('/api/projects', async (req, res) => {
