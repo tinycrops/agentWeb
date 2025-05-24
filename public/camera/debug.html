@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Debug Tool</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .side-by-side { display: flex; gap: 20px; align-items: flex-start; }
+        video, img { border: 2px solid #333; }
+        #capturedImage { max-width: 320px; max-height: 240px; }
+        button { padding: 10px 20px; margin: 10px 0; }
+        #response { width: 100%; height: 100px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Camera Debug Tool</h1>
+    
+    <div class="side-by-side">
+        <div>
+            <h3>Live Camera</h3>
+            <video id="video" autoplay playsinline width="320" height="240"></video>
+            <br>
+            <button onclick="captureAndTest()">Capture & Test VLM</button>
+        </div>
+        
+        <div>
+            <h3>Captured Image</h3>
+            <img id="capturedImage" src="" alt="Captured frame will appear here">
+            <p id="imageInfo"></p>
+        </div>
+    </div>
+    
+    <h3>VLM Response</h3>
+    <textarea id="response" readonly placeholder="VLM response will appear here..."></textarea>
+    
+    <canvas id="canvas" style="display: none;"></canvas>
+    
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const capturedImage = document.getElementById('capturedImage');
+        const imageInfo = document.getElementById('imageInfo');
+        const response = document.getElementById('response');
+        
+        // Initialize camera
+        navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480 }
+        }).then(stream => {
+            video.srcObject = stream;
+        }).catch(console.error);
+        
+        async function captureAndTest() {
+            // Capture image
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            
+            const imageDataURL = canvas.toDataURL('image/jpeg', 0.8);
+            capturedImage.src = imageDataURL;
+            
+            imageInfo.textContent = `Size: ${canvas.width}x${canvas.height}, Data: ${Math.round(imageDataURL.length/1024)}KB`;
+            
+            // Test VLM
+            response.value = "Testing VLM...";
+            
+            try {
+                const vlmResponse = await fetch('http://localhost:8080/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        max_tokens: 100,
+                        messages: [
+                            { role: 'user', content: [
+                                { type: 'text', text: "What do you see?" },
+                                { type: 'image_url', image_url: {
+                                    url: imageDataURL,
+                                } }
+                            ] },
+                        ]
+                    })
+                });
+                
+                const data = await vlmResponse.json();
+                response.value = data.choices[0].message.content;
+                
+            } catch (error) {
+                response.value = `Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html> 

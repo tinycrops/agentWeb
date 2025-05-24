@@ -121,10 +121,9 @@
         let intervalId;
         let isProcessing = false;
 
-        // Returns response text (string)
+        // Returns response text (string) - Using original format from ngxson repo
         async function sendChatCompletionRequest(instruction, imageBase64URL) {
             try {
-                // Format for SmolVLM model with image support
                 const response = await fetch(`${baseURL.value}/v1/chat/completions`, {
                     method: 'POST',
                     headers: {
@@ -144,14 +143,15 @@
                 });
 
                 if (!response.ok) {
+                    const errorData = await response.text();
                     console.error('Server responded with error:', response.status);
-                    console.error('Response:', await response.text());
-                    return `Error: Server responded with ${response.status}`;
+                    console.error('Response:', errorData);
+                    return `Server error: ${response.status} - ${errorData}`;
                 }
 
                 const data = await response.json();
                 console.log("Model response:", data);
-                return data.choices?.[0]?.message?.content || "No response from model";
+                return data.choices[0].message.content;
             } catch (error) {
                 console.error('Error in fetch:', error);
                 return `Error: ${error.message}`;
@@ -161,9 +161,25 @@
         // 1. Ask for camera permission on load
         async function initCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                // Request higher quality video for better VLM analysis
+                const constraints = {
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: false
+                };
+                
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
-                responseText.value = "Camera access granted. Ready to start.";
+                
+                // Wait for video to load and log resolution
+                video.addEventListener('loadedmetadata', () => {
+                    console.log(`Camera initialized: ${video.videoWidth}x${video.videoHeight}`);
+                    responseText.value = `Camera access granted. Resolution: ${video.videoWidth}x${video.videoHeight}. Ready to start.`;
+                });
+                
             } catch (err) {
                 console.error("Error accessing camera:", err);
                 responseText.value = `Error accessing camera: ${err.name} - ${err.message}. Please ensure permissions are granted and you are on HTTPS or localhost.`;
@@ -176,23 +192,36 @@
                 console.warn("Video stream not ready for capture.");
                 return null;
             }
+            
+            // Set canvas to video dimensions for better quality
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const context = canvas.getContext('2d');
+            
+            // Draw the current video frame
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            return canvas.toDataURL('image/jpeg', 0.8); // Use JPEG for smaller size, 0.8 quality
+            
+            // Use JPEG as in original repo
+            const imageDataURL = canvas.toDataURL('image/jpeg', 0.8); // Use JPEG for smaller size, 0.8 quality
+            
+            // Log image info for debugging
+            console.log(`Captured image: ${canvas.width}x${canvas.height}, size: ${Math.round(imageDataURL.length/1024)}KB`);
+            
+            return imageDataURL;
         }
 
         async function sendData() {
-            if (!isProcessing) return; // Ensure we don't have overlapping requests if processing takes longer than interval
+            // Critical: Check if we should still be processing at the very start
+            if (!isProcessing) {
+                console.log("sendData called but isProcessing is false, returning");
+                return; 
+            }
 
             const instruction = instructionText.value;
             const imageBase64URL = captureImage();
 
             if (!imageBase64URL) {
                 responseText.value = "Failed to capture image. Stream might not be active.";
-                // Optionally stop processing if image capture fails consistently
-                // handleStop();
                 return;
             }
 
@@ -203,21 +232,32 @@
 
             try {
                 const response = await sendChatCompletionRequest(payload.instruction, payload.imageBase64URL);
+                
+                // Check again after async call in case user stopped while waiting
+                if (!isProcessing) {
+                    console.log("Processing stopped during API call, not updating response");
+                    return;
+                }
+                
                 responseText.value = response;
                 
                 // Send the model's response to AgentWeb
-                await fetch('http://localhost:4000/api/ingestion/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userId: 'webcam-monitor',
-                        channelId: 'webcam',
-                        text: `[SmolVLM] ${response}`
-                    })
-                });
+                if (isProcessing) {
+                    await fetch('http://localhost:4000/api/ingestion/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: 'webcam-monitor',
+                            channelId: 'webcam',
+                            text: `[SmolVLM] ${response}`
+                        })
+                    });
+                }
             } catch (error) {
                 console.error('Error sending data:', error);
-                responseText.value = `Error: ${error.message}`;
+                if (isProcessing) {
+                    responseText.value = `Error: ${error.message}`;
+                }
             }
         }
 
@@ -247,20 +287,25 @@
         }
 
         function handleStop() {
+            console.log("STOP BUTTON PRESSED - Setting isProcessing to false");
             isProcessing = false;
+            
             if (intervalId) {
+                console.log("Clearing interval:", intervalId);
                 clearInterval(intervalId);
                 intervalId = null;
+                console.log("Interval cleared");
             }
+            
             startButton.textContent = "Start";
             startButton.classList.remove('stop');
             startButton.classList.add('start');
 
             instructionText.disabled = false;
             intervalSelect.disabled = false;
-            if (responseText.value.startsWith("Processing started...")) {
-                responseText.value = "Processing stopped.";
-            }
+            responseText.value = "Processing stopped.";
+            
+            console.log("STOP COMPLETE - isProcessing is now:", isProcessing);
         }
 
         startButton.addEventListener('click', () => {
